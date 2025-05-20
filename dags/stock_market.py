@@ -1,9 +1,9 @@
 from datetime import datetime
+from typing import Any
 
 import requests
 from airflow.decorators import dag, task
 from airflow.hooks.base import BaseHook
-from airflow.operators.python import PythonOperator
 from airflow.providers.docker.operators.docker import DockerOperator
 from airflow.sensors.base import PokeReturnValue
 
@@ -22,7 +22,6 @@ SYMBOL = 'NVDA'
     tags=["stock_market"],
 )
 def stock_market():
-  # Define that this task updates the `current_astronauts` Dataset
   @task.sensor(poke_interval=30, timeout=300, mode="poke")
   def is_api_available() -> PokeReturnValue:
     """
@@ -39,17 +38,13 @@ def stock_market():
     done_condition = response.json()['finance']['result'] is None
     return PokeReturnValue(is_done=done_condition, xcom_value=url)
 
-  get_stock_prices = PythonOperator(
-      task_id="get_stock_prices",
-      python_callable=_get_stock_prices,
-      op_kwargs={"path": "{{ti.xcom_pull(task_ids='is_api_available')}}", "symbol": SYMBOL}
-  )
+  @task
+  def get_stock_prices(path: Any) -> str:
+    return _get_stock_prices(path=path, symbol=SYMBOL)
 
-  store_prices = PythonOperator(
-      task_id="store_prices",
-      python_callable=_store_prices,
-      op_kwargs={"stock": "{{ti.xcom_pull(task_ids='get_stock_prices')}}"}
-  )
+  @task
+  def store_prices(stock: Any) -> str:
+    return _store_prices(stock=stock)
 
   format_prices = DockerOperator(
       task_id="format_prices",
@@ -67,16 +62,12 @@ def stock_market():
       }
   )
 
-  get_formatted_csv = PythonOperator(
-      task_id="get_formatted_csv",
-      python_callable=_get_formatted_csv,
-      op_kwargs={
-          'path': "{{ti.xcom_pull(task_ids='store_prices')}}"
-      }
-  )
+  @task
+  def get_formatted_csv(path: Any) -> str:
+    return _get_formatted_csv(path=path)
 
-  @task()
-  def load_to_postgres(object_path: str):
+  @task
+  def load_to_postgres(object_path: Any) -> str:
     from io import BytesIO
 
     import pandas as pd
@@ -90,13 +81,19 @@ def stock_market():
 
     hook = PostgresHook(postgres_conn_id="postgres")
     engine = hook.get_sqlalchemy_engine()
-    df.to_sql("stock_market", engine, if_exists="append", index=False)
+    df.to_sql("stock_market", engine, if_exists="replace", index=False)
     return f"{len(df)} records inserted."
 
+  # Define task dependencies using both functional style and bitshift operators
   api_check = is_api_available()
-  load_result = load_to_postgres(get_formatted_csv.output)
+  stock_prices = get_stock_prices(api_check)
+  stored_prices = store_prices(stock_prices)
 
-  api_check >> get_stock_prices >> store_prices >> format_prices >> get_formatted_csv >> load_result  # type: ignore
+  # Connect DockerOperator to the task flow
+  stored_prices >> format_prices
+  formatted_csv = get_formatted_csv(stored_prices)
+  format_prices >> formatted_csv
+  load_result = load_to_postgres(formatted_csv)
 
 
 # Instantiate the DAG
