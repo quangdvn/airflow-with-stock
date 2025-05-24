@@ -23,7 +23,7 @@ def _get_minio_client():
 def _get_stock_prices(path, symbol):
   import requests
 
-  url = f"{path}{symbol}?metrics=high&interval=1d&range=1y"
+  url = f"{path}{symbol}?metrics=high&interval=1d&range=2y"
   api = BaseHook.get_connection("stock_api")
   response = requests.get(url=url, headers=api.extra_dejson['headers'])
   # print("===============")

@@ -12,6 +12,7 @@ apache-airflow-providers-postgres = "==6.2.0"
 requests = "*"
 astro-sdk-python = "==1.8.1"
 pandas = "*"
+apache-airflow-providers-discord = "==3.10.0"
 
 [dev-packages]
 autopep8 = "*"

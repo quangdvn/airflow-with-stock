@@ -4,6 +4,7 @@ from typing import Any
 import requests
 from airflow.decorators import dag, task
 from airflow.hooks.base import BaseHook
+from airflow.providers.discord.notifications.discord import DiscordNotifier
 from airflow.providers.docker.operators.docker import DockerOperator
 from airflow.sensors.base import PokeReturnValue
 
@@ -20,6 +21,14 @@ SYMBOL = 'NVDA'
     catchup=False,
     default_args={"owner": "quangdvn", "retries": 3},
     tags=["stock_market"],
+    on_success_callback=DiscordNotifier(
+        discord_conn_id="discord",
+        text="Stock market DAG completed successfully",
+    ),
+    on_failure_callback=DiscordNotifier(
+        discord_conn_id="discord",
+        text="Stock market DAG failed",
+    ),
 )
 def stock_market():
   @task.sensor(poke_interval=30, timeout=300, mode="poke")
